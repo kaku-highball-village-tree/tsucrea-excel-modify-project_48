@@ -8546,10 +8546,15 @@ def create_cp_company_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     for objSheetToRemove in objWorkbook.worksheets[1:]:
         objWorkbook.remove(objSheetToRemove)
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = (
+            f"div別経営管理_計上div_{pszPeriodLabel}"
+            if pszModeLabel == "division"
+            else pszPeriodLabel
+        )
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         _clear_sheet_values(objSheet)
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
