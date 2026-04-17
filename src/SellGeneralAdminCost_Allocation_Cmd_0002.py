@@ -8616,10 +8616,11 @@ def create_cp_group_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     objWorkbook = load_workbook(pszTemplatePath)
     objTemplateSheet = objWorkbook.worksheets[0]
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = f"経営管理_計上グループ_{pszPeriodLabel}"
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
             for iColumnIndex, pszValue in enumerate(objRow, start=1):
