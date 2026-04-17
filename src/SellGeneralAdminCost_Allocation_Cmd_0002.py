@@ -6580,7 +6580,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         return None
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = "粗利金額ランキング"
+    objSheet.title = "PJ別粗利金額ランキング"
     objRows = read_tsv_rows(pszInputPath)
     iFormatRowIndex: int = 2 if objSheet.max_row >= 2 else 1
     for iRowIndex, objRow in enumerate(objRows, start=1):
