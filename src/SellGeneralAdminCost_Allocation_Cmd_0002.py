@@ -6580,7 +6580,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         return None
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = "粗利金額ランキング"
+    objSheet.title = "PJ別粗利金額ランキング"
     objRows = read_tsv_rows(pszInputPath)
     iFormatRowIndex: int = 2 if objSheet.max_row >= 2 else 1
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7140,7 +7140,7 @@ def create_step0010_pj_income_statement_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = pszYearMonth
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}"
     objRows = read_tsv_rows(pszStep0010Path)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7197,7 +7197,7 @@ def create_step0010_pj_income_statement_vertical_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = f"{pszYearMonth}_vertical"
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}_vertical"
     objRows = read_tsv_rows(pszStep0010VerticalPath)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
