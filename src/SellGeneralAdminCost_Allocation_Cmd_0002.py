@@ -1009,7 +1009,8 @@ def insert_step0006_rows_into_group_summary_excel(
     objEnd: Tuple[int, int],
 ) -> None:
     pszTemplatePath, pszOutputPath = _build_pj_summary_group_total_paths()
-    pszSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszSheetName: str = f"グループ別損益_{pszBaseSheetName}"
     if not os.path.isfile(pszTemplatePath):
         return
     if os.path.isfile(pszOutputPath):
