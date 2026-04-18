@@ -1053,7 +1053,9 @@ def insert_step0006_rows_into_company_summary_excel(
     pszTemplatePath, pszOutputPath = _build_pj_summary_company_total_paths(pszOrgMode)
     pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
     pszSheetName: str = (
-        f"Div別損益_{pszBaseSheetName}" if pszOrgMode == "new" else pszBaseSheetName
+        f"Div別損益_{pszBaseSheetName}"
+        if pszOrgMode == "new"
+        else f"カンパニー別損益_{pszBaseSheetName}"
     )
     if not os.path.isfile(pszTemplatePath):
         return
