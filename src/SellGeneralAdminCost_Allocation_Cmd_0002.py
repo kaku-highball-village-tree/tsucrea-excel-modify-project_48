@@ -1009,7 +1009,8 @@ def insert_step0006_rows_into_group_summary_excel(
     objEnd: Tuple[int, int],
 ) -> None:
     pszTemplatePath, pszOutputPath = _build_pj_summary_group_total_paths()
-    pszSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszSheetName: str = f"グループ別損益_{pszBaseSheetName}"
     if not os.path.isfile(pszTemplatePath):
         return
     if os.path.isfile(pszOutputPath):
@@ -1050,7 +1051,12 @@ def insert_step0006_rows_into_company_summary_excel(
     pszOrgMode: str,
 ) -> None:
     pszTemplatePath, pszOutputPath = _build_pj_summary_company_total_paths(pszOrgMode)
-    pszSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszSheetName: str = (
+        f"Div別損益_{pszBaseSheetName}"
+        if pszOrgMode == "new"
+        else f"カンパニー別損益_{pszBaseSheetName}"
+    )
     if not os.path.isfile(pszTemplatePath):
         return
     if os.path.isfile(pszOutputPath):
@@ -6580,7 +6586,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         return None
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = "粗利金額ランキング"
+    objSheet.title = "PJ別粗利金額ランキング"
     objRows = read_tsv_rows(pszInputPath)
     iFormatRowIndex: int = 2 if objSheet.max_row >= 2 else 1
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7140,7 +7146,7 @@ def create_step0010_pj_income_statement_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = pszYearMonth
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}"
     objRows = read_tsv_rows(pszStep0010Path)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7197,7 +7203,7 @@ def create_step0010_pj_income_statement_vertical_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = f"{pszYearMonth}_vertical"
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}_vertical"
     objRows = read_tsv_rows(pszStep0010VerticalPath)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -8542,10 +8548,15 @@ def create_cp_company_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     for objSheetToRemove in objWorkbook.worksheets[1:]:
         objWorkbook.remove(objSheetToRemove)
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = (
+            f"経営管理_計上div_{pszPeriodLabel}"
+            if pszModeLabel == "division"
+            else pszPeriodLabel
+        )
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         _clear_sheet_values(objSheet)
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -8607,10 +8618,11 @@ def create_cp_group_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     objWorkbook = load_workbook(pszTemplatePath)
     objTemplateSheet = objWorkbook.worksheets[0]
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = f"経営管理_計上グループ_{pszPeriodLabel}"
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
             for iColumnIndex, pszValue in enumerate(objRow, start=1):
