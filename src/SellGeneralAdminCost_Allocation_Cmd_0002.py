@@ -8551,7 +8551,7 @@ def create_cp_company_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
         pszSheetTitle = (
             f"経営管理_計上div_{pszPeriodLabel}"
             if pszModeLabel == "division"
-            else pszPeriodLabel
+            else f"経営管理_計上com_{pszPeriodLabel}"
         )
         if pszSheetTitle in objWorkbook.sheetnames:
             objWorkbook.remove(objWorkbook[pszSheetTitle])
