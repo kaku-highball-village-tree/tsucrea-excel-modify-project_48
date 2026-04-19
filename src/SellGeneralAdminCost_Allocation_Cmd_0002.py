@@ -30,7 +30,7 @@ from datetime import datetime
 from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Border, Side
 
 
@@ -1009,7 +1009,8 @@ def insert_step0006_rows_into_group_summary_excel(
     objEnd: Tuple[int, int],
 ) -> None:
     pszTemplatePath, pszOutputPath = _build_pj_summary_group_total_paths()
-    pszSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszSheetName: str = f"グループ別損益_{pszBaseSheetName}"
     if not os.path.isfile(pszTemplatePath):
         return
     if os.path.isfile(pszOutputPath):
@@ -1050,7 +1051,12 @@ def insert_step0006_rows_into_company_summary_excel(
     pszOrgMode: str,
 ) -> None:
     pszTemplatePath, pszOutputPath = _build_pj_summary_company_total_paths(pszOrgMode)
-    pszSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszBaseSheetName: str = _build_pj_summary_group_sheet_name(objStart, objEnd)
+    pszSheetName: str = (
+        f"Div別損益_{pszBaseSheetName}"
+        if pszOrgMode == "new"
+        else f"カンパニー別損益_{pszBaseSheetName}"
+    )
     if not os.path.isfile(pszTemplatePath):
         return
     if os.path.isfile(pszOutputPath):
@@ -6580,7 +6586,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         return None
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = "粗利金額ランキング"
+    objSheet.title = "PJ別粗利金額ランキング"
     objRows = read_tsv_rows(pszInputPath)
     iFormatRowIndex: int = 2 if objSheet.max_row >= 2 else 1
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7140,7 +7146,7 @@ def create_step0010_pj_income_statement_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = pszYearMonth
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}"
     objRows = read_tsv_rows(pszStep0010Path)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7197,7 +7203,7 @@ def create_step0010_pj_income_statement_vertical_excel_from_tsv(
 
     objWorkbook = load_workbook(pszTemplatePath)
     objSheet = objWorkbook.worksheets[0]
-    objSheet.title = f"{pszYearMonth}_vertical"
+    objSheet.title = f"PJ別損益計算書_{pszYearMonth}_vertical"
     objRows = read_tsv_rows(pszStep0010VerticalPath)
     iLastColumn: int = max((len(objRow) for objRow in objRows), default=0)
     for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -7265,6 +7271,140 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
 
     for objMergedCellRange in objSourceSheet.merged_cells.ranges:
         objDestinationSheet.merge_cells(str(objMergedCellRange))
+
+
+def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional[str]:
+    if not os.path.isdir(pszDirectory):
+        return None
+    objRegex = re.compile(pszPattern)
+    objMatchedPaths: List[str] = []
+    for pszName in os.listdir(pszDirectory):
+        if objRegex.fullmatch(pszName) is None:
+            continue
+        pszPath = os.path.join(pszDirectory, pszName)
+        if os.path.isfile(pszPath):
+            objMatchedPaths.append(pszPath)
+    if not objMatchedPaths:
+        return None
+    objMatchedPaths.sort()
+    return objMatchedPaths[-1]
+
+
+def _build_unique_sheet_title(pszTitle: str, objExistingTitles: List[str]) -> str:
+    pszNormalizedTitle: str = pszTitle[:31] if len(pszTitle) > 31 else pszTitle
+    if pszNormalizedTitle not in objExistingTitles:
+        return pszNormalizedTitle
+    iSuffix: int = 2
+    while True:
+        pszSuffix: str = f"_{iSuffix}"
+        iBaseMaxLength: int = 31 - len(pszSuffix)
+        if iBaseMaxLength < 1:
+            iBaseMaxLength = 1
+        pszCandidate: str = f"{pszNormalizedTitle[:iBaseMaxLength]}{pszSuffix}"
+        if pszCandidate not in objExistingTitles:
+            return pszCandidate
+        iSuffix += 1
+
+
+def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
+    pszPjSummaryDirectory: str = os.path.join(pszDirectory, "PJサマリ")
+    pszCpCompanyDirectory: str = os.path.join(pszDirectory, "0001_CP別_step0009")
+    pszCpGroupDirectory: str = os.path.join(pszDirectory, "0002_CP別_step0009")
+
+    objOrderedSourcePaths: List[str] = []
+
+    pszPjSalesCostPath: str = os.path.join(
+        pszPjSummaryDirectory,
+        "PJサマリ_PJ別_売上・売上原価・販管費・利益率.xlsx",
+    )
+    if not os.path.isfile(pszPjSalesCostPath):
+        return None
+    objOrderedSourcePaths.append(pszPjSalesCostPath)
+
+    pszPjBothPath = _find_latest_file_by_pattern(
+        pszDirectory,
+        r"販管費配賦後_損益計算書_\d{4}年\d{2}月_A∪B_プロジェクト名_C∪D_両方\.xlsx",
+    )
+    if pszPjBothPath is None:
+        return None
+    objOrderedSourcePaths.append(pszPjBothPath)
+
+    pszGrossRankingPath: str = os.path.join(
+        pszPjSummaryDirectory,
+        "PJサマリ_単月・累計_粗利金額ランキング.xlsx",
+    )
+    if not os.path.isfile(pszGrossRankingPath):
+        return None
+    objOrderedSourcePaths.append(pszGrossRankingPath)
+
+    pszDivTotalPath: str = os.path.join(pszPjSummaryDirectory, "PJサマリ_Div別合計.xlsx")
+    pszCompanyTotalPath: str = os.path.join(
+        pszPjSummaryDirectory,
+        "PJサマリ_カンパニー別合計.xlsx",
+    )
+    pszSummaryTotalPath: Optional[str] = None
+    if os.path.isfile(pszDivTotalPath):
+        pszSummaryTotalPath = pszDivTotalPath
+    elif os.path.isfile(pszCompanyTotalPath):
+        pszSummaryTotalPath = pszCompanyTotalPath
+    if pszSummaryTotalPath is None:
+        return None
+    objOrderedSourcePaths.append(pszSummaryTotalPath)
+
+    pszGroupTotalPath: str = os.path.join(
+        pszPjSummaryDirectory,
+        "PJサマリ_グループ別合計.xlsx",
+    )
+    if not os.path.isfile(pszGroupTotalPath):
+        return None
+    objOrderedSourcePaths.append(pszGroupTotalPath)
+
+    pszCpDivPath = _find_latest_file_by_pattern(
+        pszCpCompanyDirectory,
+        r"CP別経営管理_計上div_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+    )
+    pszCpCompanyPath = _find_latest_file_by_pattern(
+        pszCpCompanyDirectory,
+        r"CP別経営管理_計上カンパニー_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+    )
+    pszCpTotalPath: Optional[str] = pszCpDivPath if pszCpDivPath is not None else pszCpCompanyPath
+    if pszCpTotalPath is None:
+        return None
+    objOrderedSourcePaths.append(pszCpTotalPath)
+
+    pszCpGroupPath = _find_latest_file_by_pattern(
+        pszCpGroupDirectory,
+        r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+    )
+    if pszCpGroupPath is None:
+        return None
+    objOrderedSourcePaths.append(pszCpGroupPath)
+
+    pszAllProjectPath: str = os.path.join(
+        pszPjSummaryDirectory,
+        "PJサマリ_単・累計_AllProject.xlsx",
+    )
+    if not os.path.isfile(pszAllProjectPath):
+        return None
+    objOrderedSourcePaths.append(pszAllProjectPath)
+
+    objOutputWorkbook = Workbook()
+    if objOutputWorkbook.worksheets:
+        objOutputWorkbook.remove(objOutputWorkbook.worksheets[0])
+
+    for pszSourcePath in objOrderedSourcePaths:
+        objSourceWorkbook = load_workbook(pszSourcePath)
+        for objSourceSheet in objSourceWorkbook.worksheets:
+            pszSheetTitle: str = _build_unique_sheet_title(
+                objSourceSheet.title,
+                objOutputWorkbook.sheetnames,
+            )
+            objDestinationSheet = objOutputWorkbook.create_sheet(title=pszSheetTitle)
+            copy_excel_sheet_contents(objSourceSheet, objDestinationSheet)
+
+    pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
+    objOutputWorkbook.save(pszOutputPath)
+    return pszOutputPath
 
 
 def create_step0010_pj_income_statement_both_excel(
@@ -8542,10 +8682,15 @@ def create_cp_company_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     for objSheetToRemove in objWorkbook.worksheets[1:]:
         objWorkbook.remove(objSheetToRemove)
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = (
+            f"経営管理_計上div_{pszPeriodLabel}"
+            if pszModeLabel == "division"
+            else f"経営管理_計上com_{pszPeriodLabel}"
+        )
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         _clear_sheet_values(objSheet)
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
@@ -8607,10 +8752,11 @@ def create_cp_group_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
     objWorkbook = load_workbook(pszTemplatePath)
     objTemplateSheet = objWorkbook.worksheets[0]
     for pszPeriodLabel, pszInputPath in objTsvPaths:
-        if pszPeriodLabel in objWorkbook.sheetnames:
-            objWorkbook.remove(objWorkbook[pszPeriodLabel])
+        pszSheetTitle = f"経営管理_計上グループ_{pszPeriodLabel}"
+        if pszSheetTitle in objWorkbook.sheetnames:
+            objWorkbook.remove(objWorkbook[pszSheetTitle])
         objSheet = objWorkbook.copy_worksheet(objTemplateSheet)
-        objSheet.title = pszPeriodLabel
+        objSheet.title = pszSheetTitle
         objRows = read_tsv_rows(pszInputPath)
         for iRowIndex, objRow in enumerate(objRows, start=1):
             for iColumnIndex, pszValue in enumerate(objRow, start=1):
@@ -9196,6 +9342,7 @@ def main(argv: list[str]) -> int:
     if objPairs:
         create_step0010_pj_income_statement_excels(get_script_base_directory())
         create_cumulative_reports(objPairs[0][1])
+        create_all_management_data_excel(get_script_base_directory())
     return 0
 
 
