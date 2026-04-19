@@ -47,6 +47,7 @@ def print_usage() -> None:
 
 
 EXECUTION_ROOT_DIRECTORY: Optional[str] = None
+CREATED_FILE_PATHS: List[str] = []
 PERIOD_BUTTON_ID_BASE: int = 1001
 PERIOD_BUTTON_ID_OFFSET: int = 0
 BN_DOUBLECLICKED: int = 5
@@ -1032,16 +1033,16 @@ def insert_step0006_rows_into_group_summary_excel(
 
     os.makedirs(os.path.dirname(pszOutputPath), exist_ok=True)
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszGroupProfitDirectory = os.path.join(
             EXECUTION_ROOT_DIRECTORY,
             "グループ別損益",
         )
         os.makedirs(pszGroupProfitDirectory, exist_ok=True)
-        shutil.copy2(
-            pszOutputPath,
-            os.path.join(pszGroupProfitDirectory, os.path.basename(pszOutputPath)),
-        )
+        pszCopyPath: str = os.path.join(pszGroupProfitDirectory, os.path.basename(pszOutputPath))
+        shutil.copy2(pszOutputPath, pszCopyPath)
+        record_created_file(pszCopyPath)
 
 
 def insert_step0006_rows_into_company_summary_excel(
@@ -1078,6 +1079,7 @@ def insert_step0006_rows_into_company_summary_excel(
 
     os.makedirs(os.path.dirname(pszOutputPath), exist_ok=True)
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszOutputSubDirectoryName: str = "Div別損益" if pszOrgMode == "new" else "カンパニー別損益"
         pszCompanyProfitDirectory = os.path.join(
@@ -1085,10 +1087,9 @@ def insert_step0006_rows_into_company_summary_excel(
             pszOutputSubDirectoryName,
         )
         os.makedirs(pszCompanyProfitDirectory, exist_ok=True)
-        shutil.copy2(
-            pszOutputPath,
-            os.path.join(pszCompanyProfitDirectory, os.path.basename(pszOutputPath)),
-        )
+        pszCopyPath: str = os.path.join(pszCompanyProfitDirectory, os.path.basename(pszOutputPath))
+        shutil.copy2(pszOutputPath, pszCopyPath)
+        record_created_file(pszCopyPath)
 
 def insert_company_sg_admin_cost_columns(objRows: List[List[str]]) -> List[List[str]]:
     if not objRows:
@@ -2164,7 +2165,11 @@ def ensure_selected_range_file(pszDirectory: str, objRange: Tuple[Tuple[int, int
 
 
 def record_created_file(_pszPath: str) -> None:
-    return
+    if not _pszPath:
+        return
+    pszAbsPath: str = os.path.abspath(_pszPath)
+    if pszAbsPath not in CREATED_FILE_PATHS:
+        CREATED_FILE_PATHS.append(pszAbsPath)
 
 
 def month_to_ordinal(objMonth: Tuple[int, int]) -> int:
@@ -6612,6 +6617,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         "PJサマリ_単月・累計_粗利金額ランキング.xlsx",
     )
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszRankingDirectory: str = os.path.join(EXECUTION_ROOT_DIRECTORY, "カンパニー利益率順位")
         os.makedirs(pszRankingDirectory, exist_ok=True)
@@ -6621,6 +6627,7 @@ def create_pj_summary_gross_profit_ranking_excel(pszDirectory: str) -> Optional[
         )
         if os.path.abspath(pszCopyPath) != os.path.abspath(pszOutputPath):
             shutil.copy2(pszOutputPath, pszCopyPath)
+            record_created_file(pszCopyPath)
     return pszOutputPath
 
 
@@ -6813,16 +6820,19 @@ def create_pj_summary_sales_cost_sg_admin_margin_excel(pszDirectory: str) -> Opt
         "PJサマリ_PJ別_売上・売上原価・販管費・利益率.xlsx",
     )
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszCompanyResultsDirectory = os.path.join(
             EXECUTION_ROOT_DIRECTORY,
             "カンパニー実績",
         )
         os.makedirs(pszCompanyResultsDirectory, exist_ok=True)
-        shutil.copy2(
-            pszOutputPath,
-            os.path.join(pszCompanyResultsDirectory, os.path.basename(pszOutputPath)),
+        pszCopyPath: str = os.path.join(
+            pszCompanyResultsDirectory,
+            os.path.basename(pszOutputPath),
         )
+        shutil.copy2(pszOutputPath, pszCopyPath)
+        record_created_file(pszCopyPath)
     return pszOutputPath
 
 
@@ -6972,16 +6982,19 @@ def create_pj_summary_pl_cr_manhour_all_project_excel(
         "PJサマリ_単・累計_AllProject.xlsx",
     )
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszProjectProfitDirectory = os.path.join(
             EXECUTION_ROOT_DIRECTORY,
             "プロジェクト損益",
         )
         os.makedirs(pszProjectProfitDirectory, exist_ok=True)
-        shutil.copy2(
-            pszOutputPath,
-            os.path.join(pszProjectProfitDirectory, os.path.basename(pszOutputPath)),
+        pszCopyPath: str = os.path.join(
+            pszProjectProfitDirectory,
+            os.path.basename(pszOutputPath),
         )
+        shutil.copy2(pszOutputPath, pszCopyPath)
+        record_created_file(pszCopyPath)
     return pszOutputPath
 
 
@@ -7290,6 +7303,35 @@ def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional
     return objMatchedPaths[-1]
 
 
+def _find_latest_recorded_file_by_pattern(objPaths: List[str], pszPattern: str) -> Optional[str]:
+    objRegex = re.compile(pszPattern)
+    objMatchedPaths: List[str] = []
+    for pszPath in objPaths:
+        if not os.path.isfile(pszPath):
+            continue
+        if objRegex.fullmatch(os.path.basename(pszPath)) is None:
+            continue
+        objMatchedPaths.append(pszPath)
+    if not objMatchedPaths:
+        return None
+    objMatchedPaths.sort()
+    return objMatchedPaths[-1]
+
+
+def _find_latest_recorded_file_by_name(objPaths: List[str], pszFileName: str) -> Optional[str]:
+    objMatchedPaths: List[str] = []
+    for pszPath in objPaths:
+        if not os.path.isfile(pszPath):
+            continue
+        if os.path.basename(pszPath) != pszFileName:
+            continue
+        objMatchedPaths.append(pszPath)
+    if not objMatchedPaths:
+        return None
+    objMatchedPaths.sort()
+    return objMatchedPaths[-1]
+
+
 def _build_unique_sheet_title(pszTitle: str, objExistingTitles: List[str]) -> str:
     pszNormalizedTitle: str = pszTitle[:31] if len(pszTitle) > 31 else pszTitle
     if pszNormalizedTitle not in objExistingTitles:
@@ -7310,6 +7352,7 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     pszPjSummaryDirectory: str = os.path.join(pszDirectory, "PJサマリ")
     pszCpCompanyDirectory: str = os.path.join(pszDirectory, "0001_CP別_step0009")
     pszCpGroupDirectory: str = os.path.join(pszDirectory, "0002_CP別_step0009")
+    objRecordedPaths: List[str] = [pszPath for pszPath in CREATED_FILE_PATHS if pszPath.lower().endswith(".xlsx")]
 
     objOrderedSourcePaths: List[str] = []
     objStatusLines: List[str] = []
@@ -7322,6 +7365,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszPjSummaryDirectory,
         "PJサマリ_PJ別_売上・売上原価・販管費・利益率.xlsx",
     )
+    pszRecordedPjSalesCostPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_PJ別_売上・売上原価・販管費・利益率.xlsx",
+    )
+    if pszRecordedPjSalesCostPath is not None:
+        pszPjSalesCostPath = pszRecordedPjSalesCostPath
     bPjSalesCostExists: bool = os.path.isfile(pszPjSalesCostPath)
     append_file_status(pszPjSalesCostPath, bPjSalesCostExists)
     if bPjSalesCostExists:
@@ -7329,10 +7378,15 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     else:
         bHasMissing = True
 
-    pszPjBothPath = _find_latest_file_by_pattern(
-        pszDirectory,
+    pszPjBothPath = _find_latest_recorded_file_by_pattern(
+        objRecordedPaths,
         r"販管費配賦後_損益計算書_\d{4}年\d{2}月_A∪B_プロジェクト名_C∪D_両方\.xlsx",
     )
+    if pszPjBothPath is None:
+        pszPjBothPath = _find_latest_file_by_pattern(
+            pszDirectory,
+            r"販管費配賦後_損益計算書_\d{4}年\d{2}月_A∪B_プロジェクト名_C∪D_両方\.xlsx",
+        )
     if pszPjBothPath is None:
         append_file_status(
             os.path.join(
@@ -7350,6 +7404,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszPjSummaryDirectory,
         "PJサマリ_単月・累計_粗利金額ランキング.xlsx",
     )
+    pszRecordedGrossRankingPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_単月・累計_粗利金額ランキング.xlsx",
+    )
+    if pszRecordedGrossRankingPath is not None:
+        pszGrossRankingPath = pszRecordedGrossRankingPath
     bGrossRankingExists: bool = os.path.isfile(pszGrossRankingPath)
     append_file_status(pszGrossRankingPath, bGrossRankingExists)
     if bGrossRankingExists:
@@ -7362,6 +7422,18 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszPjSummaryDirectory,
         "PJサマリ_カンパニー別合計.xlsx",
     )
+    pszRecordedDivTotalPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_Div別合計.xlsx",
+    )
+    if pszRecordedDivTotalPath is not None:
+        pszDivTotalPath = pszRecordedDivTotalPath
+    pszRecordedCompanyTotalPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_カンパニー別合計.xlsx",
+    )
+    if pszRecordedCompanyTotalPath is not None:
+        pszCompanyTotalPath = pszRecordedCompanyTotalPath
     bDivTotalExists: bool = os.path.isfile(pszDivTotalPath)
     bCompanyTotalExists: bool = os.path.isfile(pszCompanyTotalPath)
     append_file_status(pszDivTotalPath, bDivTotalExists)
@@ -7380,6 +7452,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszPjSummaryDirectory,
         "PJサマリ_グループ別合計.xlsx",
     )
+    pszRecordedGroupTotalPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_グループ別合計.xlsx",
+    )
+    if pszRecordedGroupTotalPath is not None:
+        pszGroupTotalPath = pszRecordedGroupTotalPath
     bGroupTotalExists: bool = os.path.isfile(pszGroupTotalPath)
     append_file_status(pszGroupTotalPath, bGroupTotalExists)
     if bGroupTotalExists:
@@ -7387,14 +7465,24 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     else:
         bHasMissing = True
 
-    pszCpDivPath = _find_latest_file_by_pattern(
-        pszCpCompanyDirectory,
+    pszCpDivPath = _find_latest_recorded_file_by_pattern(
+        objRecordedPaths,
         r"CP別経営管理_計上div_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
     )
-    pszCpCompanyPath = _find_latest_file_by_pattern(
-        pszCpCompanyDirectory,
+    pszCpCompanyPath = _find_latest_recorded_file_by_pattern(
+        objRecordedPaths,
         r"CP別経営管理_計上カンパニー_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
     )
+    if pszCpDivPath is None:
+        pszCpDivPath = _find_latest_file_by_pattern(
+            pszCpCompanyDirectory,
+            r"CP別経営管理_計上div_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+        )
+    if pszCpCompanyPath is None:
+        pszCpCompanyPath = _find_latest_file_by_pattern(
+            pszCpCompanyDirectory,
+            r"CP別経営管理_計上カンパニー_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+        )
     append_file_status(
         os.path.join(
             pszCpCompanyDirectory,
@@ -7415,10 +7503,15 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     else:
         objOrderedSourcePaths.append(pszCpTotalPath)
 
-    pszCpGroupPath = _find_latest_file_by_pattern(
-        pszCpGroupDirectory,
+    pszCpGroupPath = _find_latest_recorded_file_by_pattern(
+        objRecordedPaths,
         r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
     )
+    if pszCpGroupPath is None:
+        pszCpGroupPath = _find_latest_file_by_pattern(
+            pszCpGroupDirectory,
+            r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
+        )
     append_file_status(
         os.path.join(
             pszCpGroupDirectory,
@@ -7435,6 +7528,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszPjSummaryDirectory,
         "PJサマリ_単・累計_AllProject.xlsx",
     )
+    pszRecordedAllProjectPath = _find_latest_recorded_file_by_name(
+        objRecordedPaths,
+        "PJサマリ_単・累計_AllProject.xlsx",
+    )
+    if pszRecordedAllProjectPath is not None:
+        pszAllProjectPath = pszRecordedAllProjectPath
     bAllProjectExists: bool = os.path.isfile(pszAllProjectPath)
     append_file_status(pszAllProjectPath, bAllProjectExists)
     if bAllProjectExists:
@@ -7464,6 +7563,7 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
 
     pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
     objOutputWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     return pszOutputPath
 
 
@@ -7506,13 +7606,13 @@ def create_step0010_pj_income_statement_both_excel(
     copy_excel_sheet_contents(objVerticalSourceSheet, objVerticalSheet)
 
     objBothWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     if EXECUTION_ROOT_DIRECTORY:
         pszTargetDirectory = os.path.join(EXECUTION_ROOT_DIRECTORY, "PJ別損益計算書")
         os.makedirs(pszTargetDirectory, exist_ok=True)
-        shutil.copy2(
-            pszOutputPath,
-            os.path.join(pszTargetDirectory, os.path.basename(pszOutputPath)),
-        )
+        pszCopyPath: str = os.path.join(pszTargetDirectory, os.path.basename(pszOutputPath))
+        shutil.copy2(pszOutputPath, pszCopyPath)
+        record_created_file(pszCopyPath)
     return pszOutputPath
 
 
@@ -8778,6 +8878,7 @@ def create_cp_company_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
         pszOutputFileName,
     )
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     return pszOutputPath
 
 
@@ -8843,6 +8944,7 @@ def create_cp_group_step0009_excel(pszScriptDirectory: str) -> Optional[str]:
         pszOutputFileName,
     )
     objWorkbook.save(pszOutputPath)
+    record_created_file(pszOutputPath)
     return pszOutputPath
 
 
@@ -9248,6 +9350,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     create_execution_folders()
+    CREATED_FILE_PATHS.clear()
 
     if len(objArgv) == 4:
         objPairs: List[List[str]] = [[objArgv[1], objArgv[2], objArgv[3]]]
