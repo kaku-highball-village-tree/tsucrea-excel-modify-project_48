@@ -9402,7 +9402,10 @@ def main(argv: list[str]) -> int:
     if objPairs:
         create_step0010_pj_income_statement_excels(get_script_base_directory())
         create_cumulative_reports(objPairs[0][1])
-        create_all_management_data_excel(get_script_base_directory())
+        pszAllManagementDirectory: str = (
+            EXECUTION_ROOT_DIRECTORY if EXECUTION_ROOT_DIRECTORY else get_script_base_directory()
+        )
+        create_all_management_data_excel(pszAllManagementDirectory)
     return 0
 
 
