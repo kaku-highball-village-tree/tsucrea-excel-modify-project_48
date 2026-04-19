@@ -7312,52 +7312,80 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     pszCpGroupDirectory: str = os.path.join(pszDirectory, "0002_CP別_step0009")
 
     objOrderedSourcePaths: List[str] = []
+    objStatusLines: List[str] = []
+    bHasMissing: bool = False
+
+    def append_file_status(pszPath: str, bExists: bool) -> None:
+        objStatusLines.append(f"{'存在' if bExists else '不存在'}: {pszPath}")
 
     pszPjSalesCostPath: str = os.path.join(
         pszPjSummaryDirectory,
         "PJサマリ_PJ別_売上・売上原価・販管費・利益率.xlsx",
     )
-    if not os.path.isfile(pszPjSalesCostPath):
-        return None
-    objOrderedSourcePaths.append(pszPjSalesCostPath)
+    bPjSalesCostExists: bool = os.path.isfile(pszPjSalesCostPath)
+    append_file_status(pszPjSalesCostPath, bPjSalesCostExists)
+    if bPjSalesCostExists:
+        objOrderedSourcePaths.append(pszPjSalesCostPath)
+    else:
+        bHasMissing = True
 
     pszPjBothPath = _find_latest_file_by_pattern(
         pszDirectory,
         r"販管費配賦後_損益計算書_\d{4}年\d{2}月_A∪B_プロジェクト名_C∪D_両方\.xlsx",
     )
     if pszPjBothPath is None:
-        return None
-    objOrderedSourcePaths.append(pszPjBothPath)
+        append_file_status(
+            os.path.join(
+                pszDirectory,
+                "販管費配賦後_損益計算書_YYYY年MM月_A∪B_プロジェクト名_C∪D_両方.xlsx",
+            ),
+            False,
+        )
+        bHasMissing = True
+    else:
+        append_file_status(pszPjBothPath, True)
+        objOrderedSourcePaths.append(pszPjBothPath)
 
     pszGrossRankingPath: str = os.path.join(
         pszPjSummaryDirectory,
         "PJサマリ_単月・累計_粗利金額ランキング.xlsx",
     )
-    if not os.path.isfile(pszGrossRankingPath):
-        return None
-    objOrderedSourcePaths.append(pszGrossRankingPath)
+    bGrossRankingExists: bool = os.path.isfile(pszGrossRankingPath)
+    append_file_status(pszGrossRankingPath, bGrossRankingExists)
+    if bGrossRankingExists:
+        objOrderedSourcePaths.append(pszGrossRankingPath)
+    else:
+        bHasMissing = True
 
     pszDivTotalPath: str = os.path.join(pszPjSummaryDirectory, "PJサマリ_Div別合計.xlsx")
     pszCompanyTotalPath: str = os.path.join(
         pszPjSummaryDirectory,
         "PJサマリ_カンパニー別合計.xlsx",
     )
+    bDivTotalExists: bool = os.path.isfile(pszDivTotalPath)
+    bCompanyTotalExists: bool = os.path.isfile(pszCompanyTotalPath)
+    append_file_status(pszDivTotalPath, bDivTotalExists)
+    append_file_status(pszCompanyTotalPath, bCompanyTotalExists)
     pszSummaryTotalPath: Optional[str] = None
-    if os.path.isfile(pszDivTotalPath):
+    if bDivTotalExists:
         pszSummaryTotalPath = pszDivTotalPath
-    elif os.path.isfile(pszCompanyTotalPath):
+    elif bCompanyTotalExists:
         pszSummaryTotalPath = pszCompanyTotalPath
     if pszSummaryTotalPath is None:
-        return None
-    objOrderedSourcePaths.append(pszSummaryTotalPath)
+        bHasMissing = True
+    else:
+        objOrderedSourcePaths.append(pszSummaryTotalPath)
 
     pszGroupTotalPath: str = os.path.join(
         pszPjSummaryDirectory,
         "PJサマリ_グループ別合計.xlsx",
     )
-    if not os.path.isfile(pszGroupTotalPath):
-        return None
-    objOrderedSourcePaths.append(pszGroupTotalPath)
+    bGroupTotalExists: bool = os.path.isfile(pszGroupTotalPath)
+    append_file_status(pszGroupTotalPath, bGroupTotalExists)
+    if bGroupTotalExists:
+        objOrderedSourcePaths.append(pszGroupTotalPath)
+    else:
+        bHasMissing = True
 
     pszCpDivPath = _find_latest_file_by_pattern(
         pszCpCompanyDirectory,
@@ -7367,26 +7395,58 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszCpCompanyDirectory,
         r"CP別経営管理_計上カンパニー_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
     )
+    append_file_status(
+        os.path.join(
+            pszCpCompanyDirectory,
+            "CP別経営管理_計上div_累計_YYYY年MM月-YYYY年MM月.xlsx",
+        ),
+        pszCpDivPath is not None,
+    )
+    append_file_status(
+        os.path.join(
+            pszCpCompanyDirectory,
+            "CP別経営管理_計上カンパニー_累計_YYYY年MM月-YYYY年MM月.xlsx",
+        ),
+        pszCpCompanyPath is not None,
+    )
     pszCpTotalPath: Optional[str] = pszCpDivPath if pszCpDivPath is not None else pszCpCompanyPath
     if pszCpTotalPath is None:
-        return None
-    objOrderedSourcePaths.append(pszCpTotalPath)
+        bHasMissing = True
+    else:
+        objOrderedSourcePaths.append(pszCpTotalPath)
 
     pszCpGroupPath = _find_latest_file_by_pattern(
         pszCpGroupDirectory,
         r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
     )
+    append_file_status(
+        os.path.join(
+            pszCpGroupDirectory,
+            "CP別経営管理_計上グループ_累計_YYYY年MM月-YYYY年MM月.xlsx",
+        ),
+        pszCpGroupPath is not None,
+    )
     if pszCpGroupPath is None:
-        return None
-    objOrderedSourcePaths.append(pszCpGroupPath)
+        bHasMissing = True
+    else:
+        objOrderedSourcePaths.append(pszCpGroupPath)
 
     pszAllProjectPath: str = os.path.join(
         pszPjSummaryDirectory,
         "PJサマリ_単・累計_AllProject.xlsx",
     )
-    if not os.path.isfile(pszAllProjectPath):
+    bAllProjectExists: bool = os.path.isfile(pszAllProjectPath)
+    append_file_status(pszAllProjectPath, bAllProjectExists)
+    if bAllProjectExists:
+        objOrderedSourcePaths.append(pszAllProjectPath)
+    else:
+        bHasMissing = True
+
+    if bHasMissing:
+        pszErrorPath: str = os.path.join(pszDirectory, "All_経営管理データ_error.txt")
+        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+            objErrorFile.write("\n".join(objStatusLines) + "\n")
         return None
-    objOrderedSourcePaths.append(pszAllProjectPath)
 
     objOutputWorkbook = Workbook()
     if objOutputWorkbook.worksheets:
