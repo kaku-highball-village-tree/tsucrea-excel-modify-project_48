@@ -7350,8 +7350,11 @@ def _build_unique_sheet_title(pszTitle: str, objExistingTitles: List[str]) -> st
 
 def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     pszPjSummaryDirectory: str = os.path.join(pszDirectory, "PJサマリ")
-    pszCpCompanyDirectory: str = os.path.join(pszDirectory, "0001_CP別_step0009")
-    pszCpGroupDirectory: str = os.path.join(pszDirectory, "0002_CP別_step0009")
+    pszCpStepBaseDirectory: str = pszDirectory
+    if os.path.basename(pszDirectory).endswith("_損益工数実行表"):
+        pszCpStepBaseDirectory = os.path.join(os.path.dirname(pszDirectory), "temp")
+    pszCpCompanyDirectory: str = os.path.join(pszCpStepBaseDirectory, "0001_CP別_step0009")
+    pszCpGroupDirectory: str = os.path.join(pszCpStepBaseDirectory, "0002_CP別_step0009")
     objRecordedPaths: List[str] = [pszPath for pszPath in CREATED_FILE_PATHS if pszPath.lower().endswith(".xlsx")]
 
     objOrderedSourcePaths: List[str] = []
