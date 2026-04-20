@@ -7357,9 +7357,24 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     objOrderedSourcePaths: List[str] = []
     objStatusLines: List[str] = []
     bHasMissing: bool = False
+    objSelectedRangePath: Optional[str] = find_selected_range_path(pszDirectory)
+    objSelectedRange = (
+        parse_selected_range(objSelectedRangePath)
+        if objSelectedRangePath is not None
+        else None
+    )
+    pszExpectedRangeLabel: str = "YYYY年MM月-YYYY年MM月"
+    if objSelectedRange is not None:
+        (iStartYear, iStartMonth), (iEndYear, iEndMonth) = objSelectedRange
+        pszExpectedRangeLabel = (
+            f"{iStartYear}年{iStartMonth:02d}月-{iEndYear}年{iEndMonth:02d}月"
+        )
 
     def append_file_status(pszPath: str, bExists: bool) -> None:
         objStatusLines.append(f"{'存在' if bExists else '不存在'}: {pszPath}")
+
+    def append_status_line(pszLine: str) -> None:
+        objStatusLines.append(pszLine)
 
     pszPjSalesCostPath: str = os.path.join(
         pszPjSummaryDirectory,
@@ -7436,14 +7451,22 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         pszCompanyTotalPath = pszRecordedCompanyTotalPath
     bDivTotalExists: bool = os.path.isfile(pszDivTotalPath)
     bCompanyTotalExists: bool = os.path.isfile(pszCompanyTotalPath)
-    append_file_status(pszDivTotalPath, bDivTotalExists)
-    append_file_status(pszCompanyTotalPath, bCompanyTotalExists)
     pszSummaryTotalPath: Optional[str] = None
     if bDivTotalExists:
         pszSummaryTotalPath = pszDivTotalPath
+        append_status_line(f"採用: PJサマリ合計 -> {pszDivTotalPath}")
+        append_status_line(
+            "未採用: PJサマリ_カンパニー別合計.xlsx（理由: PJサマリ_Div別合計.xlsx を採用したため対象外）"
+        )
     elif bCompanyTotalExists:
         pszSummaryTotalPath = pszCompanyTotalPath
+        append_status_line(f"採用: PJサマリ合計 -> {pszCompanyTotalPath}")
+        append_status_line(
+            "未採用: PJサマリ_Div別合計.xlsx（理由: PJサマリ_カンパニー別合計.xlsx を採用したため対象外）"
+        )
     if pszSummaryTotalPath is None:
+        append_file_status(pszDivTotalPath, False)
+        append_file_status(pszCompanyTotalPath, False)
         bHasMissing = True
     else:
         objOrderedSourcePaths.append(pszSummaryTotalPath)
@@ -7483,24 +7506,34 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             pszCpCompanyDirectory,
             r"CP別経営管理_計上カンパニー_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
         )
-    append_file_status(
-        os.path.join(
-            pszCpCompanyDirectory,
-            "CP別経営管理_計上div_累計_YYYY年MM月-YYYY年MM月.xlsx",
-        ),
-        pszCpDivPath is not None,
-    )
-    append_file_status(
-        os.path.join(
-            pszCpCompanyDirectory,
-            "CP別経営管理_計上カンパニー_累計_YYYY年MM月-YYYY年MM月.xlsx",
-        ),
-        pszCpCompanyPath is not None,
-    )
     pszCpTotalPath: Optional[str] = pszCpDivPath if pszCpDivPath is not None else pszCpCompanyPath
     if pszCpTotalPath is None:
+        append_file_status(
+            os.path.join(
+                pszCpCompanyDirectory,
+                f"CP別経営管理_計上div_累計_{pszExpectedRangeLabel}.xlsx",
+            ),
+            False,
+        )
+        append_file_status(
+            os.path.join(
+                pszCpCompanyDirectory,
+                f"CP別経営管理_計上カンパニー_累計_{pszExpectedRangeLabel}.xlsx",
+            ),
+            False,
+        )
         bHasMissing = True
     else:
+        if pszCpDivPath is not None:
+            append_status_line(f"採用: CP別経営管理合計 -> {pszCpDivPath}")
+            append_status_line(
+                "未採用: CP別経営管理_計上カンパニー_累計.xlsx（理由: CP別経営管理_計上div_累計 を採用したため対象外）"
+            )
+        else:
+            append_status_line(f"採用: CP別経営管理合計 -> {pszCpCompanyPath}")
+            append_status_line(
+                "未採用: CP別経営管理_計上div_累計.xlsx（理由: CP別経営管理_計上カンパニー_累計 を採用したため対象外）"
+            )
         objOrderedSourcePaths.append(pszCpTotalPath)
 
     pszCpGroupPath = _find_latest_recorded_file_by_pattern(
@@ -7513,12 +7546,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
         )
     append_file_status(
-        os.path.join(
-            pszCpGroupDirectory,
-            "CP別経営管理_計上グループ_累計_YYYY年MM月-YYYY年MM月.xlsx",
-        ),
-        pszCpGroupPath is not None,
-    )
+            os.path.join(
+                pszCpGroupDirectory,
+                f"CP別経営管理_計上グループ_累計_{pszExpectedRangeLabel}.xlsx",
+            ),
+            pszCpGroupPath is not None,
+        )
     if pszCpGroupPath is None:
         bHasMissing = True
     else:
