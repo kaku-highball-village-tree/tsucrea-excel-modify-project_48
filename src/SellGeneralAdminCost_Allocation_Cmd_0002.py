@@ -7357,6 +7357,18 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     objOrderedSourcePaths: List[str] = []
     objStatusLines: List[str] = []
     bHasMissing: bool = False
+    objSelectedRangePath: Optional[str] = find_selected_range_path(pszDirectory)
+    objSelectedRange = (
+        parse_selected_range(objSelectedRangePath)
+        if objSelectedRangePath is not None
+        else None
+    )
+    pszExpectedRangeLabel: str = "YYYY年MM月-YYYY年MM月"
+    if objSelectedRange is not None:
+        (iStartYear, iStartMonth), (iEndYear, iEndMonth) = objSelectedRange
+        pszExpectedRangeLabel = (
+            f"{iStartYear}年{iStartMonth:02d}月-{iEndYear}年{iEndMonth:02d}月"
+        )
 
     def append_file_status(pszPath: str, bExists: bool) -> None:
         objStatusLines.append(f"{'存在' if bExists else '不存在'}: {pszPath}")
@@ -7499,14 +7511,14 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
         append_file_status(
             os.path.join(
                 pszCpCompanyDirectory,
-                "CP別経営管理_計上div_累計_YYYY年MM月-YYYY年MM月.xlsx",
+                f"CP別経営管理_計上div_累計_{pszExpectedRangeLabel}.xlsx",
             ),
             False,
         )
         append_file_status(
             os.path.join(
                 pszCpCompanyDirectory,
-                "CP別経営管理_計上カンパニー_累計_YYYY年MM月-YYYY年MM月.xlsx",
+                f"CP別経営管理_計上カンパニー_累計_{pszExpectedRangeLabel}.xlsx",
             ),
             False,
         )
@@ -7534,12 +7546,12 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             r"CP別経営管理_計上グループ_累計_\d{4}年\d{2}月-\d{4}年\d{2}月\.xlsx",
         )
     append_file_status(
-        os.path.join(
-            pszCpGroupDirectory,
-            "CP別経営管理_計上グループ_累計_YYYY年MM月-YYYY年MM月.xlsx",
-        ),
-        pszCpGroupPath is not None,
-    )
+            os.path.join(
+                pszCpGroupDirectory,
+                f"CP別経営管理_計上グループ_累計_{pszExpectedRangeLabel}.xlsx",
+            ),
+            pszCpGroupPath is not None,
+        )
     if pszCpGroupPath is None:
         bHasMissing = True
     else:
