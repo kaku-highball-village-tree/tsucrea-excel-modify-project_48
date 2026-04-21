@@ -9386,10 +9386,52 @@ def create_empty_previous_fiscal_cp_step0005_vertical(
     return pszTargetPath
 
 
+def write_main_error_file(
+    pszPhase: str,
+    pszReason: str,
+    pszDetail: str = "",
+) -> Optional[str]:
+    pszErrorDirectory: str = (
+        EXECUTION_ROOT_DIRECTORY
+        if EXECUTION_ROOT_DIRECTORY
+        else get_script_base_directory()
+    )
+    try:
+        os.makedirs(pszErrorDirectory, exist_ok=True)
+        pszErrorPath: str = os.path.join(
+            pszErrorDirectory,
+            "SellGeneralAdminCost_Allocation_Cmd_0002_error.txt",
+        )
+        objLines: List[str] = [
+            f"timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "exit_code: 1",
+            f"phase: {pszPhase}",
+            f"reason: {pszReason}",
+        ]
+        if pszDetail.strip():
+            objLines.append(f"detail: {pszDetail}")
+        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+            objErrorFile.write("\n".join(objLines) + "\n")
+        return pszErrorPath
+    except Exception:
+        return None
+
+
+def fail_main_with_error(
+    pszPhase: str,
+    pszReason: str,
+    pszDetail: str = "",
+) -> int:
+    pszErrorPath = write_main_error_file(pszPhase, pszReason, pszDetail)
+    if pszErrorPath is not None:
+        print(f"Error detail file: {pszErrorPath}", file=sys.stderr)
+    return 1
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
         print_usage()
-        return 1
+        return fail_main_with_error("arg_validation", "引数不足です。")
 
     objCsvInputs: List[str] = [pszPath for pszPath in argv[1:] if pszPath.lower().endswith(".csv")]
     objTsvInputs: List[str] = [pszPath for pszPath in argv[1:] if pszPath.lower().endswith(".tsv")]
@@ -9400,7 +9442,7 @@ def main(argv: list[str]) -> int:
             " CSV は CSV だけでドラッグ＆ドロップしてください。"
             " TSV は TSV だけでドラッグ＆ドロップしてください。"
         )
-        return 1
+        return fail_main_with_error("arg_validation", "CSV と TSV を混在させて実行できません。")
 
     if objCsvInputs and not objTsvInputs:
         print(
@@ -9408,13 +9450,13 @@ def main(argv: list[str]) -> int:
             " TSV を扱う場合は TSV のみを指定してください。"
         )
         print_usage()
-        return 1
+        return fail_main_with_error("arg_validation", "TSV 専用のため CSV は受け付けません。")
 
     objArgv: list[str] = [argv[0]] + (objTsvInputs if objTsvInputs else argv[1:])
 
     if len(objArgv) < 3:
         print_usage()
-        return 1
+        return fail_main_with_error("arg_validation", "引数不足です。")
 
     create_execution_folders()
     CREATED_FILE_PATHS.clear()
@@ -9425,7 +9467,7 @@ def main(argv: list[str]) -> int:
         iArgCount: int = len(objArgv) - 1
         if iArgCount % 2 != 0:
             print_usage()
-            return 1
+            return fail_main_with_error("arg_validation", "入力ファイル数が不正です。")
         objPairs = []
         objManhourCandidates: List[str] = []
         objPlCandidates: List[str] = []
@@ -9458,7 +9500,7 @@ def main(argv: list[str]) -> int:
             for iIndex in range(1, len(objArgv), 2):
                 if iIndex + 1 >= len(objArgv):
                     print_usage()
-                    return 1
+                    return fail_main_with_error("arg_validation", "工数TSVと損益TSVの組み合わせが不正です。")
                 objPairs.append([objArgv[iIndex], objArgv[iIndex + 1]])
 
     objPairsWithMonths: List[Tuple[str, str, Optional[Tuple[int, int]]]] = []
@@ -9486,7 +9528,7 @@ def main(argv: list[str]) -> int:
             objSelectedRange = parse_selected_range(pszRangePath)
         if objSelectedRange is None:
             print("Error: 採用範囲を取得できませんでした。", file=sys.stderr)
-            return 1
+            return fail_main_with_error("range_detection", "採用範囲を取得できませんでした。")
 
     objSelectedPairs: List[List[str]]
     if objParsedMonths:
@@ -9505,7 +9547,7 @@ def main(argv: list[str]) -> int:
 
     if not objSelectedPairs:
         print("Error: 採用範囲に合致する入力がありません。", file=sys.stderr)
-        return 1
+        return fail_main_with_error("range_filtering", "採用範囲に合致する入力がありません。")
 
     pszRangeFileDirectory: str = get_script_base_directory()
     pszRangePathSelected: str = ensure_selected_range_file(pszRangeFileDirectory, objSelectedRange)
@@ -9534,10 +9576,10 @@ def main(argv: list[str]) -> int:
 
         if not os.path.exists(pszManhourPath):
             print(f"Input file not found: {pszManhourPath}")
-            return 1
+            return fail_main_with_error("input_check", "工数ファイルが見つかりません。", pszManhourPath)
         if not os.path.exists(pszPlPath):
             print(f"Input file not found: {pszPlPath}")
-            return 1
+            return fail_main_with_error("input_check", "損益ファイルが見つかりません。", pszPlPath)
 
         objManhourMap: Dict[str, str] = load_manhour_map(pszManhourPath)
         objCompanyMap: Dict[str, str] = load_company_map(pszManhourPath)
