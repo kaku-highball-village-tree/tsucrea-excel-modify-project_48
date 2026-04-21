@@ -7254,13 +7254,39 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
     objDestinationSheet.page_setup = copy(objSourceSheet.page_setup)
     objDestinationSheet.print_options = copy(objSourceSheet.print_options)
 
+    iMaxDataRow: int = 0
+    iMaxDataColumn: int = 0
+    for objRow in objSourceSheet.iter_rows(
+        min_row=1,
+        max_row=objSourceSheet.max_row,
+        min_col=1,
+        max_col=objSourceSheet.max_column,
+    ):
+        for objCell in objRow:
+            if objCell.value is None:
+                continue
+            if objCell.row > iMaxDataRow:
+                iMaxDataRow = objCell.row
+            if objCell.column > iMaxDataColumn:
+                iMaxDataColumn = objCell.column
+
     for iRowIndex, objDimension in objSourceSheet.row_dimensions.items():
+        if iMaxDataRow <= 0 or iRowIndex > iMaxDataRow:
+            continue
         objDestinationSheet.row_dimensions[iRowIndex] = copy(objDimension)
 
     for pszColumnName, objDimension in objSourceSheet.column_dimensions.items():
+        iColumnIndex: int = column_index_from_string(pszColumnName)
+        if iMaxDataColumn <= 0 or iColumnIndex > iMaxDataColumn:
+            continue
         objDestinationSheet.column_dimensions[pszColumnName] = copy(objDimension)
 
-    for objRow in objSourceSheet.iter_rows():
+    for objRow in objSourceSheet.iter_rows(
+        min_row=1,
+        max_row=iMaxDataRow if iMaxDataRow > 0 else 1,
+        min_col=1,
+        max_col=iMaxDataColumn if iMaxDataColumn > 0 else 1,
+    ):
         for objCell in objRow:
             objDestinationCell = objDestinationSheet.cell(
                 row=objCell.row,
@@ -7283,6 +7309,11 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
                 objDestinationCell.border = copy(objCell.border)
 
     for objMergedCellRange in objSourceSheet.merged_cells.ranges:
+        iMinColumn, iMinRow, iMaxColumn, iMaxRow = objMergedCellRange.bounds
+        if iMaxDataRow <= 0 or iMaxDataColumn <= 0:
+            continue
+        if iMinRow > iMaxDataRow or iMinColumn > iMaxDataColumn:
+            continue
         objDestinationSheet.merge_cells(str(objMergedCellRange))
 
 
