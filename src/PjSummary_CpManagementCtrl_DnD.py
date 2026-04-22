@@ -169,7 +169,7 @@ def write_return_code_error_details(
 def extract_openpyxl_date_warnings(pszText: str) -> List[Tuple[str, str, str]]:
     objResults: List[Tuple[str, str, str]] = []
     objPattern = re.compile(
-        r"Cell\\s+([A-Z]+\\d+)\\s+is marked as a date but the serial value\\s+(-?\\d+(?:\\.\\d+)?)\\s+is outside the limits for dates\\."
+        r"Cell\s+([A-Z]+\d+)\s+is marked as a date but the serial value\s+(-?\d+(?:\.\d+)?)\s+is outside the limits for dates\."
     )
     for pszLine in pszText.splitlines():
         objMatch = objPattern.search(pszLine)
@@ -188,7 +188,7 @@ def write_openpyxl_date_warning_error_files(
         return objOutputPaths
     for pszCsvPath in objCsvFiles:
         pszCsvBaseName: str = os.path.basename(pszCsvPath)
-        objMatch = re.search(r"損益計算書(\d{2})\.(\d{1,2})\\.csv$", pszCsvBaseName)
+        objMatch = re.search(r"損益計算書(\d{2})\.(\d{1,2})\.csv$", pszCsvBaseName)
         if objMatch is not None:
             iYear: int = 2000 + int(objMatch.group(1))
             iMonth: int = int(objMatch.group(2))

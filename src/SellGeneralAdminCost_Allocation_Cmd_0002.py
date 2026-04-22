@@ -34,6 +34,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Border, Side
+from openpyxl.utils.cell import column_index_from_string
 
 
 def print_usage() -> None:
@@ -59,7 +60,7 @@ _ORIGINAL_SHOWWARNING = warnings.showwarning
 
 def _extract_date_serial_warning_record(pszMessage: str) -> Optional[Dict[str, str]]:
     objMatch = re.search(
-        r"Cell\\s+([A-Z]+\\d+)\\s+is marked as a date but the serial value\\s+(-?\\d+(?:\\.\\d+)?)\\s+is outside the limits for dates\\.",
+        r"Cell\s+([A-Z]+\d+)\s+is marked as a date but the serial value\s+(-?\d+(?:\.\d+)?)\s+is outside the limits for dates\.",
         pszMessage,
     )
     if objMatch is None:
