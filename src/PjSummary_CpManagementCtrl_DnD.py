@@ -149,6 +149,68 @@ def append_error_log(pszMessage: str) -> None:
         objFile.write(pszMessage + "\n")
 
 
+def write_return_code_error_details(
+    pszScriptName: str,
+    iReturnCode: int,
+    pszFunctionName: str,
+    objCommand: List[str],
+    pszStdErr: str,
+) -> None:
+    append_error_log("----- return-code detail start -----")
+    append_error_log("script: " + pszScriptName)
+    append_error_log("function: " + pszFunctionName)
+    append_error_log("return_code: " + str(iReturnCode))
+    append_error_log("command: " + " ".join(objCommand))
+    append_error_log("stderr:")
+    append_error_log(pszStdErr.rstrip("\n"))
+    append_error_log("----- return-code detail end -----")
+
+
+def extract_openpyxl_date_warnings(pszText: str) -> List[Tuple[str, str, str]]:
+    objResults: List[Tuple[str, str, str]] = []
+    objPattern = re.compile(
+        r"Cell\s+([A-Z]+\d+)\s+is marked as a date but the serial value\s+(-?\d+(?:\.\d+)?)\s+is outside the limits for dates\."
+    )
+    for pszLine in pszText.splitlines():
+        objMatch = objPattern.search(pszLine)
+        if objMatch is None:
+            continue
+        objResults.append((objMatch.group(1), objMatch.group(2), pszLine.strip()))
+    return objResults
+
+
+def write_openpyxl_date_warning_error_files(
+    objCsvFiles: List[str],
+    objWarnings: List[Tuple[str, str, str]],
+) -> List[str]:
+    objOutputPaths: List[str] = []
+    if not objWarnings:
+        return objOutputPaths
+    for pszCsvPath in objCsvFiles:
+        pszCsvBaseName: str = os.path.basename(pszCsvPath)
+        objMatch = re.search(r"損益計算書(\d{2})\.(\d{1,2})\.csv$", pszCsvBaseName)
+        if objMatch is not None:
+            iYear: int = 2000 + int(objMatch.group(1))
+            iMonth: int = int(objMatch.group(2))
+            pszErrorFileName: str = f"損益計算書_{iYear}年{iMonth:02d}月_error.txt"
+        else:
+            pszRootName, _ = os.path.splitext(pszCsvBaseName)
+            pszErrorFileName = pszRootName + "_error.txt"
+        pszErrorPath: str = os.path.join(os.path.dirname(pszCsvPath), pszErrorFileName)
+        objLines: List[str] = [
+            "Error: openpyxl date serial warning detected.",
+            "source_csv: " + pszCsvPath,
+        ]
+        for iIndex, (pszCell, pszSerialValue, pszRawLine) in enumerate(objWarnings, start=1):
+            objLines.append(f"warning_{iIndex}_cell: {pszCell}")
+            objLines.append(f"warning_{iIndex}_serial_value: {pszSerialValue}")
+            objLines.append(f"warning_{iIndex}_message: {pszRawLine}")
+        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+            objErrorFile.write("\n".join(objLines) + "\n")
+        objOutputPaths.append(pszErrorPath)
+    return objOutputPaths
+
+
 def get_temp_output_directory() -> str:
     pszBaseDirectory: str = os.path.dirname(__file__)
     pszOutputDirectory: str = os.path.join(pszBaseDirectory, "temp")
@@ -1535,6 +1597,13 @@ def run_allocation_with_pairs(
         pszStdErr: str = objResult.stderr
         if pszStdErr.strip() == "":
             pszStdErr = "Process exited with non-zero return code and no stderr output."
+        write_return_code_error_details(
+            "SellGeneralAdminCost_Allocation_Cmd_0002.py",
+            objResult.returncode,
+            "run_allocation_cmd",
+            objCommand,
+            pszStdErr,
+        )
         pszErrorMessage = (
             "Error: SellGeneralAdminCost_Allocation_Cmd_0002.py exited with non-zero return code.\n\n"
             + "Return code = "
@@ -1591,6 +1660,18 @@ def run_pl_csv_to_tsv(
         pszStdErr: str = objResult.stderr
         if pszStdErr.strip() == "":
             pszStdErr = "Process exited with non-zero return code and no stderr output."
+        write_return_code_error_details(
+            "PL_CsvToTsv_Cmd_0002.py",
+            objResult.returncode,
+            "run_pl_csv_to_tsv",
+            objCommand,
+            pszStdErr,
+        )
+        objDateWarnings: List[Tuple[str, str, str]] = extract_openpyxl_date_warnings(pszStdErr)
+        if objDateWarnings:
+            objErrorPaths = write_openpyxl_date_warning_error_files(objCsvFiles, objDateWarnings)
+            for pszErrorPath in objErrorPaths:
+                append_error_log("date-warning error file: " + pszErrorPath)
         pszErrorMessage = (
             "Error: PL_CsvToTsv_Cmd_0002.py exited with non-zero return code.\n\n"
             + "Return code = "
