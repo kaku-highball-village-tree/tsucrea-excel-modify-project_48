@@ -26,6 +26,8 @@ import shutil
 import re
 import sys
 import csv
+import inspect
+import warnings
 from datetime import datetime
 from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
@@ -51,6 +53,48 @@ CREATED_FILE_PATHS: List[str] = []
 PERIOD_BUTTON_ID_BASE: int = 1001
 PERIOD_BUTTON_ID_OFFSET: int = 0
 BN_DOUBLECLICKED: int = 5
+DATE_SERIAL_WARNING_RECORDS: List[Dict[str, str]] = []
+_ORIGINAL_SHOWWARNING = warnings.showwarning
+
+
+def _extract_date_serial_warning_record(pszMessage: str) -> Optional[Dict[str, str]]:
+    objMatch = re.search(
+        r"Cell\\s+([A-Z]+\\d+)\\s+is marked as a date but the serial value\\s+(-?\\d+(?:\\.\\d+)?)\\s+is outside the limits for dates\\.",
+        pszMessage,
+    )
+    if objMatch is None:
+        return None
+    pszFunctionName: str = "unknown"
+    for objFrameInfo in inspect.stack():
+        if os.path.abspath(objFrameInfo.filename) == os.path.abspath(__file__):
+            pszFunctionName = objFrameInfo.function
+            break
+    return {
+        "cell": objMatch.group(1),
+        "serial_value": objMatch.group(2),
+        "message": pszMessage,
+        "function": pszFunctionName,
+    }
+
+
+def _capture_date_serial_warning(
+    message: warnings.WarningMessage | str,
+    category: type[Warning],
+    filename: str,
+    lineno: int,
+    file=None,
+    line=None,
+) -> None:
+    pszMessage: str = str(message)
+    objRecord = _extract_date_serial_warning_record(pszMessage)
+    if objRecord is not None:
+        objRecord["warning_category"] = category.__name__
+        objRecord["warning_source"] = f"{filename}:{lineno}"
+        DATE_SERIAL_WARNING_RECORDS.append(objRecord)
+    _ORIGINAL_SHOWWARNING(message, category, filename, lineno, file=file, line=line)
+
+
+warnings.showwarning = _capture_date_serial_warning
 
 
 def get_script_base_directory() -> str:
@@ -9390,6 +9434,7 @@ def write_main_error_file(
     pszPhase: str,
     pszReason: str,
     pszDetail: str = "",
+    pszFunction: str = "",
 ) -> Optional[str]:
     pszErrorDirectory: str = (
         EXECUTION_ROOT_DIRECTORY
@@ -9408,8 +9453,26 @@ def write_main_error_file(
             f"phase: {pszPhase}",
             f"reason: {pszReason}",
         ]
+        if pszFunction.strip():
+            objLines.append(f"function: {pszFunction}")
         if pszDetail.strip():
             objLines.append(f"detail: {pszDetail}")
+        if DATE_SERIAL_WARNING_RECORDS:
+            objLines.append("date_serial_warning_count: {0}".format(len(DATE_SERIAL_WARNING_RECORDS)))
+            for iIndex, objWarning in enumerate(DATE_SERIAL_WARNING_RECORDS, start=1):
+                objLines.append(f"date_serial_warning_{iIndex}_cell: {objWarning.get('cell', '')}")
+                objLines.append(
+                    f"date_serial_warning_{iIndex}_serial_value: {objWarning.get('serial_value', '')}"
+                )
+                objLines.append(
+                    f"date_serial_warning_{iIndex}_function: {objWarning.get('function', 'unknown')}"
+                )
+                objLines.append(
+                    f"date_serial_warning_{iIndex}_warning_source: {objWarning.get('warning_source', '')}"
+                )
+                objLines.append(
+                    f"date_serial_warning_{iIndex}_message: {objWarning.get('message', '')}"
+                )
         with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
             objErrorFile.write("\n".join(objLines) + "\n")
         return pszErrorPath
@@ -9422,13 +9485,23 @@ def fail_main_with_error(
     pszReason: str,
     pszDetail: str = "",
 ) -> int:
-    pszErrorPath = write_main_error_file(pszPhase, pszReason, pszDetail)
+    pszFunctionName: str = "unknown"
+    objStack = inspect.stack()
+    if len(objStack) > 1:
+        pszFunctionName = objStack[1].function
+    pszErrorPath = write_main_error_file(
+        pszPhase,
+        pszReason,
+        pszDetail,
+        pszFunction=pszFunctionName,
+    )
     if pszErrorPath is not None:
         print(f"Error detail file: {pszErrorPath}", file=sys.stderr)
     return 1
 
 
 def main(argv: list[str]) -> int:
+    DATE_SERIAL_WARNING_RECORDS.clear()
     if len(argv) < 3:
         print_usage()
         return fail_main_with_error("arg_validation", "引数不足です。")
