@@ -7362,6 +7362,36 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
         objDestinationSheet.merge_cells(str(objMergedCellRange))
 
 
+def _find_last_data_row_in_sheet(objSheet) -> int:
+    iLastDataRow: int = 0
+    for objRow in objSheet.iter_rows(
+        min_row=1,
+        max_row=objSheet.max_row,
+        min_col=1,
+        max_col=objSheet.max_column,
+    ):
+        for objCell in objRow:
+            if objCell.value is None:
+                continue
+            if isinstance(objCell.value, str) and objCell.value.strip() == "":
+                continue
+            if objCell.row > iLastDataRow:
+                iLastDataRow = objCell.row
+    return iLastDataRow
+
+
+def _clear_sheet_borders_after_last_data_row(objSheet) -> None:
+    iLastDataRow: int = _find_last_data_row_in_sheet(objSheet)
+    iStartRow: int = iLastDataRow + 1
+    iSheetMaxRow: int = objSheet.max_row
+    iSheetMaxColumn: int = objSheet.max_column
+    if iStartRow > iSheetMaxRow or iSheetMaxColumn <= 0:
+        return
+    for iRowIndex in range(iStartRow, iSheetMaxRow + 1):
+        for iColumnIndex in range(1, iSheetMaxColumn + 1):
+            objSheet.cell(row=iRowIndex, column=iColumnIndex).border = Border()
+
+
 def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional[str]:
     if not os.path.isdir(pszDirectory):
         return None
@@ -7672,6 +7702,7 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             )
             objDestinationSheet = objOutputWorkbook.create_sheet(title=pszSheetTitle)
             copy_excel_sheet_contents(objSourceSheet, objDestinationSheet)
+            _clear_sheet_borders_after_last_data_row(objDestinationSheet)
 
     pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
     objOutputWorkbook.save(pszOutputPath)
