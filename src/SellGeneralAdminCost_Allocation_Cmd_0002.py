@@ -9436,6 +9436,8 @@ def write_main_error_file(
     pszReason: str,
     pszDetail: str = "",
     pszFunction: str = "",
+    pszCallPath: str = "unknown",
+    pszSourceLocation: str = "unknown",
 ) -> Optional[str]:
     pszErrorDirectory: str = (
         EXECUTION_ROOT_DIRECTORY
@@ -9448,33 +9450,44 @@ def write_main_error_file(
             pszErrorDirectory,
             "SellGeneralAdminCost_Allocation_Cmd_0002_error.txt",
         )
+        pszNow: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         objLines: List[str] = [
-            f"timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "exit_code: 1",
-            f"phase: {pszPhase}",
-            f"reason: {pszReason}",
+            f"[{pszNow}] ERROR START",
+            "JOB: SellGeneralAdminCost_Allocation_Cmd_0002.py",
         ]
-        if pszFunction.strip():
-            objLines.append(f"function: {pszFunction}")
+        if DATE_SERIAL_WARNING_RECORDS:
+            for objWarning in DATE_SERIAL_WARNING_RECORDS:
+                objLines.append("WARNING_TYPE: OPENPYXL_DATE_SERIAL_OUT_OF_RANGE")
+                objLines.append("FILE: (unknown)")
+                objLines.append("SHEET: (unknown)")
+                objLines.append(f"CELL: {objWarning.get('cell', '')}")
+                objLines.append(f"SERIAL_VALUE: {objWarning.get('serial_value', '')}")
+                objLines.append("NUMBER_FORMAT: (unknown)")
+                objLines.append("RAW_VALUE: (unknown)")
+                objLines.append(f"WARNING_MESSAGE: {objWarning.get('message', '')}")
+                objLines.append("RESULT: ERROR")
+        objLines.extend(
+            [
+                "ERROR_TYPE: NON_ZERO_RETURN_CODE",
+                "RETURN_CODE: 1",
+                "MODULE: SellGeneralAdminCost_Allocation_Cmd_0002.py",
+                f"FUNCTION: {pszFunction if pszFunction.strip() else 'unknown'}",
+                f"CALL_PATH: {pszCallPath}",
+                f"SOURCE_LOCATION: {pszSourceLocation}",
+                "COMMAND: " + " ".join(sys.argv),
+                f"RESULT: ERROR (EXIT 1)",
+                f"phase: {pszPhase}",
+                f"reason: {pszReason}",
+            ]
+        )
         if pszDetail.strip():
             objLines.append(f"detail: {pszDetail}")
-        if DATE_SERIAL_WARNING_RECORDS:
-            objLines.append("date_serial_warning_count: {0}".format(len(DATE_SERIAL_WARNING_RECORDS)))
-            for iIndex, objWarning in enumerate(DATE_SERIAL_WARNING_RECORDS, start=1):
-                objLines.append(f"date_serial_warning_{iIndex}_cell: {objWarning.get('cell', '')}")
-                objLines.append(
-                    f"date_serial_warning_{iIndex}_serial_value: {objWarning.get('serial_value', '')}"
-                )
-                objLines.append(
-                    f"date_serial_warning_{iIndex}_function: {objWarning.get('function', 'unknown')}"
-                )
-                objLines.append(
-                    f"date_serial_warning_{iIndex}_warning_source: {objWarning.get('warning_source', '')}"
-                )
-                objLines.append(
-                    f"date_serial_warning_{iIndex}_message: {objWarning.get('message', '')}"
-                )
-        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+        objLines.append("stderr:")
+        objLines.append("(see console stderr output)")
+        objLines.append("stdout:")
+        objLines.append("(empty)")
+        objLines.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR END")
+        with open(pszErrorPath, "a", encoding="utf-8", newline="\n") as objErrorFile:
             objErrorFile.write("\n".join(objLines) + "\n")
         return pszErrorPath
     except Exception:
@@ -9487,14 +9500,20 @@ def fail_main_with_error(
     pszDetail: str = "",
 ) -> int:
     pszFunctionName: str = "unknown"
+    pszCallPath: str = "unknown"
+    pszSourceLocation: str = "unknown"
     objStack = inspect.stack()
     if len(objStack) > 1:
         pszFunctionName = objStack[1].function
+        pszCallPath = "main -> " + pszFunctionName
+        pszSourceLocation = f"{os.path.basename(objStack[1].filename)}:{objStack[1].lineno}"
     pszErrorPath = write_main_error_file(
         pszPhase,
         pszReason,
         pszDetail,
         pszFunction=pszFunctionName,
+        pszCallPath=pszCallPath,
+        pszSourceLocation=pszSourceLocation,
     )
     if pszErrorPath is not None:
         print(f"Error detail file: {pszErrorPath}", file=sys.stderr)

@@ -32,6 +32,7 @@ import sys
 import tempfile
 import traceback
 import tkinter as tk
+from datetime import datetime
 from ctypes import wintypes
 from typing import Dict, List, Optional, Tuple
 
@@ -155,15 +156,40 @@ def write_return_code_error_details(
     pszFunctionName: str,
     objCommand: List[str],
     pszStdErr: str,
+    objInputFiles: Optional[List[str]] = None,
+    objDateWarnings: Optional[List[Tuple[str, str, str]]] = None,
 ) -> None:
-    append_error_log("----- return-code detail start -----")
-    append_error_log("script: " + pszScriptName)
-    append_error_log("function: " + pszFunctionName)
-    append_error_log("return_code: " + str(iReturnCode))
-    append_error_log("command: " + " ".join(objCommand))
+    pszNow: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append_error_log(f"[{pszNow}] ERROR START")
+    append_error_log("JOB: " + pszScriptName)
+    if objDateWarnings:
+        for pszCell, pszSerialValue, pszRawLine in objDateWarnings:
+            append_error_log("WARNING_TYPE: OPENPYXL_DATE_SERIAL_OUT_OF_RANGE")
+            append_error_log("FILE: (unknown)")
+            append_error_log("SHEET: (unknown)")
+            append_error_log("CELL: " + pszCell)
+            append_error_log("SERIAL_VALUE: " + pszSerialValue)
+            append_error_log("NUMBER_FORMAT: (unknown)")
+            append_error_log("RAW_VALUE: (unknown)")
+            append_error_log("WARNING_MESSAGE: " + pszRawLine)
+            append_error_log("RESULT: ERROR")
+    append_error_log("ERROR_TYPE: NON_ZERO_RETURN_CODE")
+    append_error_log("RETURN_CODE: " + str(iReturnCode))
+    append_error_log("MODULE: " + pszScriptName)
+    append_error_log("FUNCTION: " + pszFunctionName)
+    append_error_log("CALL_PATH: main -> " + pszFunctionName)
+    append_error_log("SOURCE_LOCATION: " + __file__ + ":unknown")
+    append_error_log("COMMAND: " + " ".join(objCommand))
+    if objInputFiles:
+        for pszInputFile in objInputFiles:
+            append_error_log("INPUT_FILE: " + pszInputFile)
+    append_error_log(f"RESULT: ERROR (EXIT {iReturnCode})")
     append_error_log("stderr:")
     append_error_log(pszStdErr.rstrip("\n"))
-    append_error_log("----- return-code detail end -----")
+    append_error_log("stdout:")
+    append_error_log("(empty)")
+    pszEnd: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append_error_log(f"[{pszEnd}] ERROR END")
 
 
 def extract_openpyxl_date_warnings(pszText: str) -> List[Tuple[str, str, str]]:
@@ -198,14 +224,22 @@ def write_openpyxl_date_warning_error_files(
             pszErrorFileName = pszRootName + "_error.txt"
         pszErrorPath: str = os.path.join(os.path.dirname(pszCsvPath), pszErrorFileName)
         objLines: List[str] = [
-            "Error: openpyxl date serial warning detected.",
-            "source_csv: " + pszCsvPath,
+            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR START",
+            "JOB: PL_CsvToTsv_Cmd_0002.py",
         ]
         for iIndex, (pszCell, pszSerialValue, pszRawLine) in enumerate(objWarnings, start=1):
-            objLines.append(f"warning_{iIndex}_cell: {pszCell}")
-            objLines.append(f"warning_{iIndex}_serial_value: {pszSerialValue}")
-            objLines.append(f"warning_{iIndex}_message: {pszRawLine}")
-        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+            _ = iIndex
+            objLines.append("WARNING_TYPE: OPENPYXL_DATE_SERIAL_OUT_OF_RANGE")
+            objLines.append("FILE: " + pszCsvPath)
+            objLines.append("SHEET: (unknown)")
+            objLines.append(f"CELL: {pszCell}")
+            objLines.append(f"SERIAL_VALUE: {pszSerialValue}")
+            objLines.append("NUMBER_FORMAT: (unknown)")
+            objLines.append("RAW_VALUE: (unknown)")
+            objLines.append(f"WARNING_MESSAGE: {pszRawLine}")
+            objLines.append("RESULT: ERROR")
+        objLines.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR END")
+        with open(pszErrorPath, "a", encoding="utf-8", newline="\n") as objErrorFile:
             objErrorFile.write("\n".join(objLines) + "\n")
         objOutputPaths.append(pszErrorPath)
     return objOutputPaths
@@ -1603,6 +1637,7 @@ def run_allocation_with_pairs(
             "run_allocation_cmd",
             objCommand,
             pszStdErr,
+            objInputFiles=objArgs,
         )
         pszErrorMessage = (
             "Error: SellGeneralAdminCost_Allocation_Cmd_0002.py exited with non-zero return code.\n\n"
@@ -1660,14 +1695,16 @@ def run_pl_csv_to_tsv(
         pszStdErr: str = objResult.stderr
         if pszStdErr.strip() == "":
             pszStdErr = "Process exited with non-zero return code and no stderr output."
+        objDateWarnings: List[Tuple[str, str, str]] = extract_openpyxl_date_warnings(pszStdErr)
         write_return_code_error_details(
             "PL_CsvToTsv_Cmd_0002.py",
             objResult.returncode,
             "run_pl_csv_to_tsv",
             objCommand,
             pszStdErr,
+            objInputFiles=objCsvFiles,
+            objDateWarnings=objDateWarnings,
         )
-        objDateWarnings: List[Tuple[str, str, str]] = extract_openpyxl_date_warnings(pszStdErr)
         if objDateWarnings:
             objErrorPaths = write_openpyxl_date_warning_error_files(objCsvFiles, objDateWarnings)
             for pszErrorPath in objErrorPaths:
