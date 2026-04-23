@@ -7362,29 +7362,54 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
         objDestinationSheet.merge_cells(str(objMergedCellRange))
 
 
-def _find_last_data_row_in_sheet(objSheet) -> int:
-    iLastDataRow: int = 0
-    for objRow in objSheet.iter_rows(
-        min_row=1,
-        max_row=objSheet.max_row,
-        min_col=1,
-        max_col=objSheet.max_column,
-    ):
-        for objCell in objRow:
-            if objCell.value is None:
+def _is_blank_cell_for_data_rectangle(objCell) -> bool:
+    objValue = objCell.value
+    if objValue is None:
+        return True
+    if isinstance(objValue, str):
+        if objValue.startswith("="):
+            return False
+        return objValue.strip() == ""
+    return False
+
+
+def _find_data_rectangle_in_sheet(objSheet) -> Tuple[int, int]:
+    iMaxRow: int = objSheet.max_row
+    iMaxColumn: int = objSheet.max_column
+    iLastDataRow: int = 1
+    iLastDataColumn: int = 1
+
+    for iColumnIndex in range(1, iMaxColumn + 1):
+        if iColumnIndex > 1:
+            bIsBlankColumn: bool = True
+            for iRowIndex in range(1, iLastDataRow + 1):
+                if not _is_blank_cell_for_data_rectangle(
+                    objSheet.cell(row=iRowIndex, column=iColumnIndex)
+                ):
+                    bIsBlankColumn = False
+                    break
+            if bIsBlankColumn:
+                iLastDataColumn = iColumnIndex - 1
+                break
+
+        iColumnLastDataRow: int = 0
+        for iRowIndex in range(1, iMaxRow + 1):
+            objCell = objSheet.cell(row=iRowIndex, column=iColumnIndex)
+            if _is_blank_cell_for_data_rectangle(objCell):
                 continue
-            if isinstance(objCell.value, str) and objCell.value.strip() == "":
-                continue
-            if objCell.row > iLastDataRow:
-                iLastDataRow = objCell.row
-    return iLastDataRow
+            iColumnLastDataRow = iRowIndex
+        if iColumnLastDataRow > iLastDataRow:
+            iLastDataRow = iColumnLastDataRow
+        iLastDataColumn = iColumnIndex
+
+    return iLastDataRow, iLastDataColumn
 
 
 def _clear_sheet_borders_after_last_data_row(objSheet) -> None:
-    iLastDataRow: int = _find_last_data_row_in_sheet(objSheet)
+    iLastDataRow, iLastDataColumn = _find_data_rectangle_in_sheet(objSheet)
     iStartRow: int = iLastDataRow + 1
     iSheetMaxRow: int = objSheet.max_row
-    iSheetMaxColumn: int = objSheet.max_column
+    iSheetMaxColumn: int = max(iLastDataColumn, objSheet.max_column)
     if iStartRow > iSheetMaxRow or iSheetMaxColumn <= 0:
         return
     for iRowIndex in range(iStartRow, iSheetMaxRow + 1):
