@@ -26,12 +26,15 @@ import shutil
 import re
 import sys
 import csv
+import inspect
+import warnings
 from datetime import datetime
 from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Border, Side
+from openpyxl.utils.cell import column_index_from_string
 
 
 def print_usage() -> None:
@@ -51,6 +54,48 @@ CREATED_FILE_PATHS: List[str] = []
 PERIOD_BUTTON_ID_BASE: int = 1001
 PERIOD_BUTTON_ID_OFFSET: int = 0
 BN_DOUBLECLICKED: int = 5
+DATE_SERIAL_WARNING_RECORDS: List[Dict[str, str]] = []
+_ORIGINAL_SHOWWARNING = warnings.showwarning
+
+
+def _extract_date_serial_warning_record(pszMessage: str) -> Optional[Dict[str, str]]:
+    objMatch = re.search(
+        r"Cell\s+([A-Z]+\d+)\s+is marked as a date but the serial value\s+(-?\d+(?:\.\d+)?)\s+is outside the limits for dates\.",
+        pszMessage,
+    )
+    if objMatch is None:
+        return None
+    pszFunctionName: str = "unknown"
+    for objFrameInfo in inspect.stack():
+        if os.path.abspath(objFrameInfo.filename) == os.path.abspath(__file__):
+            pszFunctionName = objFrameInfo.function
+            break
+    return {
+        "cell": objMatch.group(1),
+        "serial_value": objMatch.group(2),
+        "message": pszMessage,
+        "function": pszFunctionName,
+    }
+
+
+def _capture_date_serial_warning(
+    message: warnings.WarningMessage | str,
+    category: type[Warning],
+    filename: str,
+    lineno: int,
+    file=None,
+    line=None,
+) -> None:
+    pszMessage: str = str(message)
+    objRecord = _extract_date_serial_warning_record(pszMessage)
+    if objRecord is not None:
+        objRecord["warning_category"] = category.__name__
+        objRecord["warning_source"] = f"{filename}:{lineno}"
+        DATE_SERIAL_WARNING_RECORDS.append(objRecord)
+    _ORIGINAL_SHOWWARNING(message, category, filename, lineno, file=file, line=line)
+
+
+warnings.showwarning = _capture_date_serial_warning
 
 
 def get_script_base_directory() -> str:
@@ -7317,6 +7362,61 @@ def copy_excel_sheet_contents(objSourceSheet, objDestinationSheet) -> None:
         objDestinationSheet.merge_cells(str(objMergedCellRange))
 
 
+def _is_blank_cell_for_data_rectangle(objCell) -> bool:
+    objValue = objCell.value
+    if objValue is None:
+        return True
+    if isinstance(objValue, str):
+        if objValue.startswith("="):
+            return False
+        return objValue.strip() == ""
+    return False
+
+
+def _find_data_rectangle_in_sheet(objSheet) -> Tuple[int, int]:
+    iMaxRow: int = objSheet.max_row
+    iMaxColumn: int = objSheet.max_column
+    iLastDataRow: int = 1
+    iLastDataColumn: int = 1
+
+    for iColumnIndex in range(1, iMaxColumn + 1):
+        if iColumnIndex > 1:
+            bIsBlankColumn: bool = True
+            for iRowIndex in range(1, iLastDataRow + 1):
+                if not _is_blank_cell_for_data_rectangle(
+                    objSheet.cell(row=iRowIndex, column=iColumnIndex)
+                ):
+                    bIsBlankColumn = False
+                    break
+            if bIsBlankColumn:
+                iLastDataColumn = iColumnIndex - 1
+                break
+
+        iColumnLastDataRow: int = 0
+        for iRowIndex in range(1, iMaxRow + 1):
+            objCell = objSheet.cell(row=iRowIndex, column=iColumnIndex)
+            if _is_blank_cell_for_data_rectangle(objCell):
+                continue
+            iColumnLastDataRow = iRowIndex
+        if iColumnLastDataRow > iLastDataRow:
+            iLastDataRow = iColumnLastDataRow
+        iLastDataColumn = iColumnIndex
+
+    return iLastDataRow, iLastDataColumn
+
+
+def _clear_sheet_borders_after_last_data_row(objSheet) -> None:
+    iLastDataRow, iLastDataColumn = _find_data_rectangle_in_sheet(objSheet)
+    iStartRow: int = iLastDataRow + 1
+    iSheetMaxRow: int = objSheet.max_row
+    iSheetMaxColumn: int = max(iLastDataColumn, objSheet.max_column)
+    if iStartRow > iSheetMaxRow or iSheetMaxColumn <= 0:
+        return
+    for iRowIndex in range(iStartRow, iSheetMaxRow + 1):
+        for iColumnIndex in range(1, iSheetMaxColumn + 1):
+            objSheet.cell(row=iRowIndex, column=iColumnIndex).border = Border()
+
+
 def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional[str]:
     if not os.path.isdir(pszDirectory):
         return None
@@ -7627,6 +7727,7 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             )
             objDestinationSheet = objOutputWorkbook.create_sheet(title=pszSheetTitle)
             copy_excel_sheet_contents(objSourceSheet, objDestinationSheet)
+            _clear_sheet_borders_after_last_data_row(objDestinationSheet)
 
     pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
     objOutputWorkbook.save(pszOutputPath)
@@ -9390,6 +9491,9 @@ def write_main_error_file(
     pszPhase: str,
     pszReason: str,
     pszDetail: str = "",
+    pszFunction: str = "",
+    pszCallPath: str = "unknown",
+    pszSourceLocation: str = "unknown",
 ) -> Optional[str]:
     pszErrorDirectory: str = (
         EXECUTION_ROOT_DIRECTORY
@@ -9402,15 +9506,44 @@ def write_main_error_file(
             pszErrorDirectory,
             "SellGeneralAdminCost_Allocation_Cmd_0002_error.txt",
         )
+        pszNow: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         objLines: List[str] = [
-            f"timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "exit_code: 1",
-            f"phase: {pszPhase}",
-            f"reason: {pszReason}",
+            f"[{pszNow}] ERROR START",
+            "JOB: SellGeneralAdminCost_Allocation_Cmd_0002.py",
         ]
+        if DATE_SERIAL_WARNING_RECORDS:
+            for objWarning in DATE_SERIAL_WARNING_RECORDS:
+                objLines.append("WARNING_TYPE: OPENPYXL_DATE_SERIAL_OUT_OF_RANGE")
+                objLines.append("FILE: (unknown)")
+                objLines.append("SHEET: (unknown)")
+                objLines.append(f"CELL: {objWarning.get('cell', '')}")
+                objLines.append(f"SERIAL_VALUE: {objWarning.get('serial_value', '')}")
+                objLines.append("NUMBER_FORMAT: (unknown)")
+                objLines.append("RAW_VALUE: (unknown)")
+                objLines.append(f"WARNING_MESSAGE: {objWarning.get('message', '')}")
+                objLines.append("RESULT: ERROR")
+        objLines.extend(
+            [
+                "ERROR_TYPE: NON_ZERO_RETURN_CODE",
+                "RETURN_CODE: 1",
+                "MODULE: SellGeneralAdminCost_Allocation_Cmd_0002.py",
+                f"FUNCTION: {pszFunction if pszFunction.strip() else 'unknown'}",
+                f"CALL_PATH: {pszCallPath}",
+                f"SOURCE_LOCATION: {pszSourceLocation}",
+                "COMMAND: " + " ".join(sys.argv),
+                f"RESULT: ERROR (EXIT 1)",
+                f"phase: {pszPhase}",
+                f"reason: {pszReason}",
+            ]
+        )
         if pszDetail.strip():
             objLines.append(f"detail: {pszDetail}")
-        with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+        objLines.append("stderr:")
+        objLines.append("(see console stderr output)")
+        objLines.append("stdout:")
+        objLines.append("(empty)")
+        objLines.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR END")
+        with open(pszErrorPath, "a", encoding="utf-8", newline="\n") as objErrorFile:
             objErrorFile.write("\n".join(objLines) + "\n")
         return pszErrorPath
     except Exception:
@@ -9422,13 +9555,29 @@ def fail_main_with_error(
     pszReason: str,
     pszDetail: str = "",
 ) -> int:
-    pszErrorPath = write_main_error_file(pszPhase, pszReason, pszDetail)
+    pszFunctionName: str = "unknown"
+    pszCallPath: str = "unknown"
+    pszSourceLocation: str = "unknown"
+    objStack = inspect.stack()
+    if len(objStack) > 1:
+        pszFunctionName = objStack[1].function
+        pszCallPath = "main -> " + pszFunctionName
+        pszSourceLocation = f"{os.path.basename(objStack[1].filename)}:{objStack[1].lineno}"
+    pszErrorPath = write_main_error_file(
+        pszPhase,
+        pszReason,
+        pszDetail,
+        pszFunction=pszFunctionName,
+        pszCallPath=pszCallPath,
+        pszSourceLocation=pszSourceLocation,
+    )
     if pszErrorPath is not None:
         print(f"Error detail file: {pszErrorPath}", file=sys.stderr)
     return 1
 
 
 def main(argv: list[str]) -> int:
+    DATE_SERIAL_WARNING_RECORDS.clear()
     if len(argv) < 3:
         print_usage()
         return fail_main_with_error("arg_validation", "引数不足です。")
