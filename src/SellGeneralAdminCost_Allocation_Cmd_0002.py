@@ -31,7 +31,8 @@ import warnings
 from datetime import datetime
 from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+from uuid import uuid4
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Border, Side
 from openpyxl.utils.cell import column_index_from_string
@@ -7420,7 +7421,13 @@ def _clear_sheet_borders_after_last_data_row(objSheet) -> None:
 def _build_all_management_data_by_com(
     objOrderedSourcePaths: List[str],
     pszOutputPath: str,
+    pfnLog: Optional[Callable[[str, str], None]] = None,
 ) -> None:
+    def write_log(pszLevel: str, pszMessage: str) -> None:
+        if pfnLog is None:
+            return
+        pfnLog(pszLevel, pszMessage)
+
     if not objOrderedSourcePaths:
         raise ValueError("source paths are empty")
 
@@ -7434,17 +7441,30 @@ def _build_all_management_data_by_com(
     objExcel.DisplayAlerts = False
     objTargetWorkbook = None
     try:
+        write_log("INFO", f"Base workbook = {objOrderedSourcePaths[0]}")
         objTargetWorkbook = objExcel.Workbooks.Open(os.path.abspath(objOrderedSourcePaths[0]))
+        write_log("INFO", "Start merging additional workbooks")
         for pszSourcePath in objOrderedSourcePaths[1:]:
+            write_log("INFO", f"Processing file = {pszSourcePath}")
             objSourceWorkbook = objExcel.Workbooks.Open(os.path.abspath(pszSourcePath))
             try:
                 iSheetCount = objSourceWorkbook.Worksheets.Count
+                write_log("INFO", f"Sheet count = {iSheetCount}")
                 for iIndex in range(1, iSheetCount + 1):
-                    objSourceWorkbook.Worksheets(iIndex).Copy(
-                        After=objTargetWorkbook.Worksheets(objTargetWorkbook.Worksheets.Count)
-                    )
+                    pszSheetName: str = str(objSourceWorkbook.Worksheets(iIndex).Name)
+                    write_log("INFO", f"Copy sheet start = {pszSheetName}")
+                    try:
+                        objSourceWorkbook.Worksheets(iIndex).Copy(
+                            After=objTargetWorkbook.Worksheets(objTargetWorkbook.Worksheets.Count)
+                        )
+                        write_log("INFO", f"Copy success = {pszSheetName}")
+                    except Exception as exc:  # noqa: BLE001
+                        write_log("ERROR", f"Copy failed = {pszSheetName}")
+                        write_log("ERROR", f"Exception = {exc}")
+                        raise
             finally:
                 objSourceWorkbook.Close(SaveChanges=False)
+                write_log("INFO", f"Closed workbook = {pszSourcePath}")
 
         objSeenNames: set[str] = set()
         iTargetSheetCount = objTargetWorkbook.Worksheets.Count
@@ -7454,11 +7474,14 @@ def _build_all_management_data_by_com(
             objSheet.Name = pszUniqueName
             objSeenNames.add(pszUniqueName)
 
+        write_log("INFO", f"Saving as = {pszOutputPath}")
         objTargetWorkbook.SaveAs(os.path.abspath(pszOutputPath), FileFormat=51)
+        write_log("INFO", "Save complete")
     finally:
         if objTargetWorkbook is not None:
             objTargetWorkbook.Close(SaveChanges=False)
         objExcel.Quit()
+        write_log("INFO", "END COM MODE")
 
 
 def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional[str]:
@@ -7752,37 +7775,64 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
     else:
         bHasMissing = True
 
+    pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
+    pszLogPath: str = os.path.join(pszDirectory, "All_経営管理データ_log.txt")
+    pszRunId: str = datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid4().hex[:8]
+
+    def write_all_management_log(pszLevel: str, pszMessage: str) -> None:
+        pszTimestamp: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(pszLogPath, "a", encoding="utf-8", newline="\n") as objLogFile:
+            objLogFile.write(
+                f"[{pszTimestamp}] {pszLevel} run_id={pszRunId} {pszMessage}\n"
+            )
+
     if bHasMissing:
+        write_all_management_log("ERROR", "required source files are missing")
         pszErrorPath: str = os.path.join(pszDirectory, "All_経営管理データ_error.txt")
         with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
             objErrorFile.write("\n".join(objStatusLines) + "\n")
         return None
 
-    pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
     pszCopyMode: str = os.environ.get("TSUCREA_EXCEL_COPY_MODE", "auto").strip().lower()
     if pszCopyMode not in {"com", "openpyxl", "auto"}:
         pszCopyMode = "auto"
+    write_all_management_log("INFO", f"copy_mode_selected={pszCopyMode}")
+    write_all_management_log("INFO", f"objOrderedSourcePaths count = {len(objOrderedSourcePaths)}")
+    for iIndex, pszSourcePath in enumerate(objOrderedSourcePaths):
+        write_all_management_log("INFO", f"[{iIndex}] {pszSourcePath}")
 
     if pszCopyMode in {"com", "auto"}:
+        write_all_management_log("INFO", "copy_mode_actual=com")
+        write_all_management_log("INFO", "START COM MODE")
         try:
-            _build_all_management_data_by_com(objOrderedSourcePaths, pszOutputPath)
+            _build_all_management_data_by_com(
+                objOrderedSourcePaths,
+                pszOutputPath,
+                pfnLog=write_all_management_log,
+            )
             record_created_file(pszOutputPath)
             return pszOutputPath
         except Exception as exc:  # noqa: BLE001
             append_status_line(f"COMコピー失敗: {exc}")
+            write_all_management_log("ERROR", f"COM failed: {exc}")
             if pszCopyMode == "com":
                 pszErrorPath: str = os.path.join(pszDirectory, "All_経営管理データ_error.txt")
                 with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
                     objErrorFile.write("\n".join(objStatusLines) + "\n")
                 return None
+            write_all_management_log("INFO", "COM failed, fallback to openpyxl")
 
+    write_all_management_log("INFO", "copy_mode_actual=openpyxl")
+    write_all_management_log("INFO", "START OPENPYXL MODE")
     objOutputWorkbook = Workbook()
     if objOutputWorkbook.worksheets:
         objOutputWorkbook.remove(objOutputWorkbook.worksheets[0])
 
     for pszSourcePath in objOrderedSourcePaths:
+        write_all_management_log("INFO", f"Open workbook = {pszSourcePath}")
         objSourceWorkbook = load_workbook(pszSourcePath)
         for objSourceSheet in objSourceWorkbook.worksheets:
+            write_all_management_log("INFO", f"Copy sheet = {objSourceSheet.title}")
             pszSheetTitle: str = _build_unique_sheet_title(
                 objSourceSheet.title,
                 objOutputWorkbook.sheetnames,
@@ -7791,7 +7841,10 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             copy_excel_sheet_contents(objSourceSheet, objDestinationSheet)
             _clear_sheet_borders_after_last_data_row(objDestinationSheet)
 
+    write_all_management_log("INFO", f"Saving as = {pszOutputPath}")
     objOutputWorkbook.save(pszOutputPath)
+    write_all_management_log("INFO", "Save complete")
+    write_all_management_log("INFO", "END OPENPYXL MODE")
     record_created_file(pszOutputPath)
     return pszOutputPath
 
