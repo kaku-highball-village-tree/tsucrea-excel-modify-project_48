@@ -7417,6 +7417,50 @@ def _clear_sheet_borders_after_last_data_row(objSheet) -> None:
             objSheet.cell(row=iRowIndex, column=iColumnIndex).border = Border()
 
 
+def _build_all_management_data_by_com(
+    objOrderedSourcePaths: List[str],
+    pszOutputPath: str,
+) -> None:
+    if not objOrderedSourcePaths:
+        raise ValueError("source paths are empty")
+
+    try:
+        import win32com.client  # type: ignore[import-not-found]
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("win32com is not available") from exc
+
+    objExcel = win32com.client.DispatchEx("Excel.Application")
+    objExcel.Visible = False
+    objExcel.DisplayAlerts = False
+    objTargetWorkbook = None
+    try:
+        objTargetWorkbook = objExcel.Workbooks.Open(os.path.abspath(objOrderedSourcePaths[0]))
+        for pszSourcePath in objOrderedSourcePaths[1:]:
+            objSourceWorkbook = objExcel.Workbooks.Open(os.path.abspath(pszSourcePath))
+            try:
+                iSheetCount = objSourceWorkbook.Worksheets.Count
+                for iIndex in range(1, iSheetCount + 1):
+                    objSourceWorkbook.Worksheets(iIndex).Copy(
+                        After=objTargetWorkbook.Worksheets(objTargetWorkbook.Worksheets.Count)
+                    )
+            finally:
+                objSourceWorkbook.Close(SaveChanges=False)
+
+        objSeenNames: set[str] = set()
+        iTargetSheetCount = objTargetWorkbook.Worksheets.Count
+        for iIndex in range(1, iTargetSheetCount + 1):
+            objSheet = objTargetWorkbook.Worksheets(iIndex)
+            pszUniqueName: str = _build_unique_sheet_title(str(objSheet.Name), list(objSeenNames))
+            objSheet.Name = pszUniqueName
+            objSeenNames.add(pszUniqueName)
+
+        objTargetWorkbook.SaveAs(os.path.abspath(pszOutputPath), FileFormat=51)
+    finally:
+        if objTargetWorkbook is not None:
+            objTargetWorkbook.Close(SaveChanges=False)
+        objExcel.Quit()
+
+
 def _find_latest_file_by_pattern(pszDirectory: str, pszPattern: str) -> Optional[str]:
     if not os.path.isdir(pszDirectory):
         return None
@@ -7714,6 +7758,24 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             objErrorFile.write("\n".join(objStatusLines) + "\n")
         return None
 
+    pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
+    pszCopyMode: str = os.environ.get("TSUCREA_EXCEL_COPY_MODE", "auto").strip().lower()
+    if pszCopyMode not in {"com", "openpyxl", "auto"}:
+        pszCopyMode = "auto"
+
+    if pszCopyMode in {"com", "auto"}:
+        try:
+            _build_all_management_data_by_com(objOrderedSourcePaths, pszOutputPath)
+            record_created_file(pszOutputPath)
+            return pszOutputPath
+        except Exception as exc:  # noqa: BLE001
+            append_status_line(f"COMコピー失敗: {exc}")
+            if pszCopyMode == "com":
+                pszErrorPath: str = os.path.join(pszDirectory, "All_経営管理データ_error.txt")
+                with open(pszErrorPath, "w", encoding="utf-8", newline="\n") as objErrorFile:
+                    objErrorFile.write("\n".join(objStatusLines) + "\n")
+                return None
+
     objOutputWorkbook = Workbook()
     if objOutputWorkbook.worksheets:
         objOutputWorkbook.remove(objOutputWorkbook.worksheets[0])
@@ -7729,7 +7791,6 @@ def create_all_management_data_excel(pszDirectory: str) -> Optional[str]:
             copy_excel_sheet_contents(objSourceSheet, objDestinationSheet)
             _clear_sheet_borders_after_last_data_row(objDestinationSheet)
 
-    pszOutputPath: str = os.path.join(pszDirectory, "All_経営管理データ.xlsx")
     objOutputWorkbook.save(pszOutputPath)
     record_created_file(pszOutputPath)
     return pszOutputPath
